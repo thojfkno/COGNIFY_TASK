@@ -1,0 +1,201 @@
+# ====================================================
+# Cognifyz: Restaurant Data Analysis & Modeling
+# ====================================================
+
+# -------------------------------
+# Step 1: Import Libraries
+# -------------------------------
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# -------------------------------
+# Step 2: Load Dataset
+# -------------------------------
+df = pd.read_csv(r"C:\Users\rahvj\OneDrive\Desktop\restaurant_data.csv")  # Update path
+
+# Normalize column names
+df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
+
+# Handle missing values
+df = df.dropna(subset=['aggregate_rating'])
+df['cuisines'] = df['cuisines'].fillna('Unknown')
+df['has_table_booking'] = df['has_table_booking'].fillna('No')
+df['has_online_delivery'] = df['has_online_delivery'].fillna('No')
+df['address'] = df['address'].fillna('')
+
+# -------------------------------
+# Task 1: Price Range Analysis
+# -------------------------------
+print("---- Task 1: Price Range Analysis ----")
+# Most common price range
+common_price = df['price_range'].value_counts()
+print("Most common price range:\n", common_price)
+
+# Average rating per price range
+avg_rating_price = df.groupby('price_range')['aggregate_rating'].mean()
+print("\nAverage rating by price range:\n", avg_rating_price)
+
+# Rating color for highest average rating
+rating_color_summary = df.groupby('price_range').agg({
+    'aggregate_rating': 'mean',
+    'rating_color': lambda x: x.mode()[0]
+}).sort_values(by='aggregate_rating', ascending=False)
+print("\nPrice range vs rating color:\n", rating_color_summary)
+
+# -------------------------------
+# Task 2: Feature Engineering
+# -------------------------------
+print("\n---- Task 2: Feature Engineering ----")
+df['restaurant_name_length'] = df['restaurant_name'].apply(lambda x: len(str(x)))
+df['address_length'] = df['address'].apply(lambda x: len(str(x)))
+df['cuisine_count'] = df['cuisines'].apply(lambda x: len(str(x).split(', ')))
+df['has_table_booking_flag'] = df['has_table_booking'].apply(lambda x: 1 if str(x).lower() == 'yes' else 0)
+df['has_online_delivery_flag'] = df['has_online_delivery'].apply(lambda x: 1 if str(x).lower() == 'yes' else 0)
+print("New features added: name length, address length, cuisine count, table booking flag, online delivery flag")
+
+# -------------------------------
+# Task 3: Table Booking & Online Delivery
+# -------------------------------
+print("\n---- Task 3: Table Booking & Online Delivery ----")
+# Percentage
+table_booking_percent = df['has_table_booking_flag'].mean() * 100
+online_delivery_percent = df['has_online_delivery_flag'].mean() * 100
+print(f"Table Booking: {table_booking_percent:.2f}%")
+print(f"Online Delivery: {online_delivery_percent:.2f}%")
+
+# Average rating comparison
+avg_rating_table = df.groupby('has_table_booking_flag')['aggregate_rating'].mean()
+print("\nAverage Rating by Table Booking:\n", avg_rating_table)
+
+# Online delivery by price range
+delivery_price_range = df.groupby(['price_range', 'has_online_delivery_flag']).size().unstack().fillna(0)
+delivery_percentage = delivery_price_range.div(delivery_price_range.sum(axis=1), axis=0) * 100
+print("\nOnline Delivery by Price Range (%):\n", delivery_percentage)
+
+# -------------------------------
+# Task 4: Predictive Modeling
+# -------------------------------
+print("\n---- Task 4: Predictive Modeling ----")
+features = ['has_table_booking_flag', 'has_online_delivery_flag', 'price_range', 'votes', 
+            'restaurant_name_length', 'cuisine_count']
+target = 'aggregate_rating'
+
+X = df[features]
+y = df[target]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Linear Regression
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+lr_pred = lr.predict(X_test)
+
+# Decision Tree
+dt = DecisionTreeRegressor(random_state=42)
+dt.fit(X_train, y_train)
+dt_pred = dt.predict(X_test)
+
+# Random Forest
+rf = RandomForestRegressor(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+rf_pred = rf.predict(X_test)
+
+# Evaluation Function
+def evaluate_model(name, y_true, y_pred):
+    print(f"\n{name} Performance:")
+    print("R² Score:", round(r2_score(y_true, y_pred), 3))
+    print("MAE     :", round(mean_absolute_error(y_true, y_pred), 3))
+    print("RMSE    :", round(np.sqrt(mean_squared_error(y_true, y_pred)), 3))
+
+evaluate_model("Linear Regression", y_test, lr_pred)
+evaluate_model("Decision Tree", y_test, dt_pred)
+evaluate_model("Random Forest", y_test, rf_pred)
+
+# -------------------------------
+# Task 5: Customer Preference Analysis
+# -------------------------------
+print("\n---- Task 5: Customer Preference Analysis ----")
+# Explode cuisines
+df['cuisine_list'] = df['cuisines'].str.split(', ')
+df_exploded = df.explode('cuisine_list')
+
+# Average rating per cuisine
+cuisine_avg_rating = df_exploded.groupby('cuisine_list')['aggregate_rating'].mean().sort_values(ascending=False)
+print("Top cuisines by average rating:\n", cuisine_avg_rating.head(10))
+
+# Most popular cuisines by votes
+cuisine_votes = df_exploded.groupby('cuisine_list')['votes'].sum().sort_values(ascending=False)
+print("\nMost popular cuisines by votes:\n", cuisine_votes.head(10))
+
+# High-rated cuisines with >=100 restaurants
+cuisine_counts = df_exploded['cuisine_list'].value_counts()
+popular_cuisines = cuisine_counts[cuisine_counts >= 100].index
+reliable_cuisine_ratings = df_exploded[df_exploded['cuisine_list'].isin(popular_cuisines)]
+high_rated_cuisines = reliable_cuisine_ratings.groupby('cuisine_list')['aggregate_rating'].mean().sort_values(ascending=False)
+print("\nReliable high-rated cuisines:\n", high_rated_cuisines.head(10))
+
+# -------------------------------
+# Task 6: Data Visualization
+# -------------------------------
+print("\n---- Task 6: Data Visualization ----")
+# Rating distribution
+plt.figure(figsize=(8,5))
+sns.histplot(df['aggregate_rating'], bins=20, kde=True, color='skyblue')
+plt.title("Distribution of Ratings")
+plt.xlabel("Aggregate Rating")
+plt.ylabel("Frequency")
+plt.show()
+
+# Average rating by top cuisines
+top_10_cuisines = cuisine_avg_rating.head(10)
+plt.figure(figsize=(10,5))
+sns.barplot(x=top_10_cuisines.values, y=top_10_cuisines.index, palette='crest')
+plt.title("Top 10 Cuisines by Average Rating")
+plt.xlabel("Average Rating")
+plt.ylabel("Cuisine")
+plt.show()
+
+# Average rating by top cities
+avg_city_ratings = df.groupby('city')['aggregate_rating'].mean().sort_values(ascending=False).head(10)
+plt.figure(figsize=(10,5))
+sns.barplot(x=avg_city_ratings.values, y=avg_city_ratings.index, palette='flare')
+plt.title("Top 10 Cities by Average Rating")
+plt.xlabel("Average Rating")
+plt.ylabel("City")
+plt.show()
+
+# Votes vs rating scatter
+plt.figure(figsize=(8,5))
+sns.scatterplot(data=df, x='votes', y='aggregate_rating', color='coral')
+plt.title("Votes vs Aggregate Rating")
+plt.xlabel("Votes")
+plt.ylabel("Rating")
+plt.show()
+
+# Price range vs rating
+plt.figure(figsize=(8,5))
+sns.boxplot(x='price_range', y='aggregate_rating', data=df, palette='pastel')
+plt.title("Aggregate Rating by Price Range")
+plt.xlabel("Price Range")
+plt.ylabel("Aggregate Rating")
+plt.show()
+
+# Table booking & online delivery vs rating
+plt.figure(figsize=(12,5))
+plt.subplot(1, 2, 1)
+sns.boxplot(x='has_table_booking_flag', y='aggregate_rating', data=df)
+plt.title("Table Booking vs Rating")
+plt.subplot(1, 2, 2)
+sns.boxplot(x='has_online_delivery_flag', y='aggregate_rating', data=df)
+plt.title("Online Delivery vs Rating")
+plt.tight_layout()
+plt.show()
+ 
